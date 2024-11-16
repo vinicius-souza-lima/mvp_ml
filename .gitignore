@@ -1,0 +1,4 @@
+.idea
+datasets/mri_classification_segmentation
+datasets/chest_xray/imgs
+.ipynb_checkpoints
