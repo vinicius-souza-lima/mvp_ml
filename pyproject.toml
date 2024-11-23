@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "mvp-machine-learning"
+version = "0.1.0"
+description = "Repositório de arquivos para MVP de ML"
+authors = ["Vinícius de Souza Lima <eng.viniciusdesouzalima@gmail.com>"]
+readme = "README.md"
+package-mode = false
+      
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = "^2.2.3"
+ipykernel = "^6.29.5"
+matplotlib = "^3.9.2"
+pillow = "^11.0.0"
+scikit-learn = "^1.5.2"
+
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
