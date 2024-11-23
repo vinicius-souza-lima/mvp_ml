@@ -2,3 +2,6 @@
 datasets/mri_classification_segmentation
 datasets/chest_xray/imgs
 .ipynb_checkpoints
+mvp_ml_files
+teste_files
+*.pdf
