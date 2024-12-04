@@ -6,3 +6,4 @@ mvp_ml_files
 teste_files
 *.pdf
 .python-version
+.venv
