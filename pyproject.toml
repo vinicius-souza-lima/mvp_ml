@@ -13,6 +13,7 @@ ipykernel = "^6.29.5"
 matplotlib = "^3.9.2"
 pillow = "^11.0.0"
 scikit-learn = "^1.5.2"
+kagglehub = "^0.3.4"
 
 
 [tool.poetry.group.dev.dependencies]
