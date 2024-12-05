@@ -24,14 +24,26 @@ import numpy as np
 from PIL import Image
 from sklearn.model_selection import train_test_split, cross_val_predict
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score
+from sklearn.metrics import (
+    confusion_matrix,
+    ConfusionMatrixDisplay,
+    precision_score,
+    recall_score,
+    f1_score,
+)
+from sklearn.base import BaseEstimator, TransformerMixin
 import joblib
-
+import kagglehub
 
 # %% [markdown]
 # ## Problema de Regressão
 
 # %%
+path = kagglehub.dataset_download("paultimothymooney/chest-xray-pneumonia")
+
+# %%
+path_chest_train = Path(path) / "chest_xray" / "chest_xray" / "train"
+
 
 # %% [markdown]
 # ## Problema de Classificação (Algoritmos Clássicos)
@@ -81,14 +93,17 @@ class Dataset:
                 np.array(
                     Image.open(str(f))  # Lê a imagem
                     .convert("L")  # Converte para escala de cinza
-                    .resize(self.resolution, Image.Resampling.LANCZOS)
-                ).flatten()  # Redimensiona a imagem
-            )  # Formata a matriz como array
+                    .resize(
+                        self.resolution, Image.Resampling.LANCZOS
+                    )  # Redimensiona a imagem
+                ).flatten()  # Formata a matriz como array
+            )
             targets.append(
                 next(
-                    (cat for cat in f.name.split("_") if cat in target_values), fallback
+                    (cat for cat in f.name.split("_") if cat in target_values),
+                    fallback,  # procura categoria no nome do arquivo
                 )
-            )  # procura categoria no nome do arquivo
+            )
 
         return np.stack(imgs), np.array(targets)
 
@@ -140,6 +155,26 @@ lr_clf = joblib.load("Logistic_Regression.joblib")
 # # Selecionar modelo
 
 # %%
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import SGDClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
+
+
+models = {
+    "KNN": KNeighborsClassifier(),
+    "SVM": SVC(),
+    "LR": LogisticRegression(),
+    "RF": RandomForestClassifier(),
+    "DT": DecisionTreeClassifier(),
+    "GB": GradientBoostingClassifier(),
+    "NB": GaussianNB(),
+    "XGB": SGDClassifier(),
+}
+
+# %%
 y_chest_pred = np.load("y_chest_pred.npy")
 
 # %%
@@ -165,6 +200,12 @@ display(f1_score(y_chest_train, y_chest_pred, average=None))
 display(f1_score(y_chest_train, y_chest_pred, average="macro"))
 display(f1_score(y_chest_train, y_chest_pred, average="micro"))
 display(f1_score(y_chest_train, y_chest_pred, average="weighted"))
+
+# %%
+disp = ConfusionMatrixDisplay(cm_chest, display_labels=["virus", "bacteria", "normal"])
+
+# %%
+disp.plot()
 
 # %% [markdown]
 # ## Problema de Visão Computacional (Deep Learning)
