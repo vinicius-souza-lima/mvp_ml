@@ -22,7 +22,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
-from sklearn.model_selection import train_test_split, cross_val_predict
+from sklearn.model_selection import train_test_split, cross_val_predict, cross_val_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     confusion_matrix,
@@ -34,6 +34,11 @@ from sklearn.metrics import (
 from sklearn.base import BaseEstimator, TransformerMixin
 import joblib
 import kagglehub
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.tree import DecisionTreeClassifier
+import seaborn as sns
 
 # %% [markdown]
 # ## Problema de Regressão
@@ -132,80 +137,108 @@ plt.imshow(X_chest[4000].reshape(resolution))
 plt.axis("off")
 plt.show()
 
+
+# %% [markdown]
+# ### Data Augmentation
+
 # %%
+class Augmenter(BaseEstimator, TransformerMixin):
+    def __init__(
+        self, rotation_range=10, width_shift_range=0.1, height_shift_range=0.1
+    ):
+        self.rotation_range = rotation_range
+        self.width_shift_range = width_shift_range
+        self.height_shift_range = height_shift_range
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X, y=None):
+        np.random.normal(0, 1, X.shape)
+
+
+# %% [markdown]
+# ### Selecionar modelo
+
+# %%
+from sklearn.model_selection import KFold
+
+
 X_chest_train, X_chest_test, y_chest_train, y_chest_test = train_test_split(
     X_chest, y_chest, test_size=0.2, random_state=42, stratify=y_chest
 )
 
-# %%
-# lr_clf = LogisticRegression(max_iter=1000,random_state=42)
-# lr_clf.fit(X_chest_train,y_chest_train)
+num_particoes = 5
+kfold = KFold(n_splits=num_particoes, shuffle=True, random_state=42)
 
 # %%
-# joblib.dump(lr_clf,"Logistic_Regression.joblib")
-
-# %%
-lr_clf = joblib.load("Logistic_Regression.joblib")
-
-# %%
-# y_chest_pred = cross_val_predict(lr_clf,X_chest_train,y_chest_train,cv=3)
-# np.save("y_chest_pred",y_chest_pred)
-
-# %% [markdown]
-# # Selecionar modelo
-
-# %%
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.linear_model import SGDClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.svm import SVC
-from sklearn.tree import DecisionTreeClassifier
+np.random.seed(42)
+results = []
 
 
 models = {
-    "KNN": KNeighborsClassifier(),
-    "SVM": SVC(),
-    "LR": LogisticRegression(),
-    "RF": RandomForestClassifier(),
-    "DT": DecisionTreeClassifier(),
-    "GB": GradientBoostingClassifier(),
-    "NB": GaussianNB(),
-    "XGB": SGDClassifier(),
+    "NB": GaussianNB(),  # 5 sec
+    "KNN": KNeighborsClassifier(),  # 12 sec
+    "RF": RandomForestClassifier(),  # +- 3 min
+    "CART": DecisionTreeClassifier(),  # +- 7 min
 }
 
-# %%
-y_chest_pred = np.load("y_chest_pred.npy")
+for name, model in models.items():
+    cv_results = cross_val_score(
+        model, X_chest_train, y_chest_train, cv=kfold, scoring="accuracy"
+    )
+    results.append(cv_results)
+    np.save("results.npy", results)
+
+    print(f"{name}: Média: {cv_results.mean():.2f}, std:{cv_results.std():.3f}")
 
 # %%
-cm_chest = confusion_matrix(y_chest_train, y_chest_pred)
+sns.set_theme()
+names = ["NB", "KNN", "RF", "CART"]
+fig, ax = plt.subplots(figsize=(12, 8))
+fig.suptitle("Comparação da acurácia dos modelos")
+ax.set_xticklabels(names)
+sns.boxplot(results);
+
+# %% [markdown]
+# Assim foi escolhido Random Forest para prosseguir na otimização de hiperparâmetros
+
+# %% [markdown]
+# ## Otimização de Hiperparâmetros
 
 # %%
-cm_chest
+model = RandomForestClassifier()
 
 # %%
-display(precision_score(y_chest_train, y_chest_pred, average=None))
-display(precision_score(y_chest_train, y_chest_pred, average="macro"))
-display(precision_score(y_chest_train, y_chest_pred, average="micro"))
-display(precision_score(y_chest_train, y_chest_pred, average="weighted"))
+from sklearn.model_selection import RandomizedSearchCV
+
+param_grid = {
+    "n_estimators": [50, 100, 200],
+    "max_depth": [None, 2, 5, 10],
+    "min_samples_split": [2, 4, 5],
+    "min_samples_leaf": [2, 4, 5],
+}
+
+random_search = RandomizedSearchCV(
+    model, param_grid, cv=3, scoring="accuracy", n_iter=5, n_jobs=2, random_state=42
+)
 
 # %%
-display(recall_score(y_chest_train, y_chest_pred, average=None))
-display(recall_score(y_chest_train, y_chest_pred, average="macro"))
-display(recall_score(y_chest_train, y_chest_pred, average="micro"))
-display(recall_score(y_chest_train, y_chest_pred, average="weighted"))
+random_search.fit(X_chest_train, y_chest_train)
 
 # %%
-display(f1_score(y_chest_train, y_chest_pred, average=None))
-display(f1_score(y_chest_train, y_chest_pred, average="macro"))
-display(f1_score(y_chest_train, y_chest_pred, average="micro"))
-display(f1_score(y_chest_train, y_chest_pred, average="weighted"))
+random_search.best_score_
 
 # %%
-disp = ConfusionMatrixDisplay(cm_chest, display_labels=["virus", "bacteria", "normal"])
+final_model = random_search.best_estimator_
 
 # %%
-disp.plot()
+joblib.dump(final_model, "final_model.joblib")
+
+# %% [markdown]
+# # Avaliação dos Resultados
+
+# %%
 
 # %% [markdown]
 # ## Problema de Visão Computacional (Deep Learning)
