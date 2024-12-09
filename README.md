@@ -7,7 +7,7 @@ O notebook pode ser acessado pelo [link do colab](https://colab.research.google.
 Primeiro clone o repositório na sua máquina
 
 ```
-git clone github.com/vinicius-souza-lima/mvp_ml
+git clone github.com/vinicius-souza-lima/mvp_ml.git
 ```
 
 Use o `poetry` para instalar as dependências presentes no arquivo `pyproject.toml`
