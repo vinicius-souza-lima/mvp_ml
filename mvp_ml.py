@@ -17,7 +17,7 @@
 
 # %%
 from pathlib import Path
-import urllib.request
+import urllib
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,6 +41,7 @@ from sklearn.tree import DecisionTreeClassifier
 import seaborn as sns
 import kagglehub
 import math
+import fsspec
 
 # %% [markdown]
 # ## Problema de Regressão
@@ -149,38 +150,25 @@ class Dataset:
 
         return X, y
 
+    @staticmethod
+    def download_from_remote(
+        owner: str,
+        repo: str,
+        folder: str,
+        destination: Path = Path("."),
+    ):
+        fs = fsspec.filesystem(protocol="github", org=owner, repo=repo)
+        local_dir = destination / folder
+        local_dir.mkdir(exist_ok=True, parents=True)
+        fs.get(folder, destination.as_posix(), recursive=True)
+
 
 # %%
-chest_data = Dataset("chest", path_chest, resolution=(128, 128))
-chest_data.load_dataset()
-X, y = chest_data.convert_toarray(["virus", "bacteria"], "normal")
-
-# %%
-chest_data.save_converted(X, y)
-
-# %%
-Dataset.load_converted("datasets/chest")
-
-# %%
-"datasets/chest"
-
-# %%
-
-# %%
-# for i,array in enumerate(np.array_split(X_chest,5)):
-#   np.save(f"datasets/chest_xray/imgs_array/X_chest_{i}",array)
-#   np.save("datasets/chest_xray/imgs_array/y_chest",y_chest)
+Dataset.download_from_remote("vinicius-souza-lima", "mvp_ml", "datasets")
 
 # %%
 resolution = (128, 128)
 # X_chest,y_chest = convert_toarray("./datasets/chest_xray/imgs",["virus","bacteria"],"normal",resolution)
-
-# %%
-X_chest = []
-for file in sorted(Path("datasets/chest_xray/imgs_array/X_chest/").glob("*")):
-    X_chest.append(np.load(str(file)))
-X_chest = np.vstack(X_chest)
-y_chest = np.load("datasets/chest_xray/imgs_array/y_chest.npy")
 
 # %% [markdown]
 # ### Definição do Problema

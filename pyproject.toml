@@ -15,6 +15,7 @@ pillow = "^11.0.0"
 scikit-learn = "^1.5.2"
 kagglehub = "^0.3.4"
 seaborn = "^0.13.2"
+fsspec = "^2024.10.0"
 
 
 [tool.poetry.group.dev.dependencies]
