@@ -17,7 +17,6 @@
 
 # %%
 from pathlib import Path
-import urllib
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -43,18 +42,9 @@ import kagglehub
 import math
 import fsspec
 
+
 # %% [markdown]
 # ## Problema de Regressão
-
-# %%
-path = kagglehub.dataset_download("paultimothymooney/chest-xray-pneumonia")
-
-# %%
-path_chest = Path(path) / "chest_xray" / "chest_xray"
-
-# %%
-path_chest
-
 
 # %% [markdown]
 # ## Problema de Classificação (Algoritmos Clássicos)
@@ -65,13 +55,11 @@ class Dataset:
         self,
         name: str,
         path_dir: str,
-        url: str | None = None,
         resolution: tuple[int, int] = (128, 128),
     ):
         self.name = name
         self.data = None
         self.path_dir = path_dir
-        self.url = url
         self.resolution = resolution
         self.files = None
         self.X = None
@@ -110,7 +98,7 @@ class Dataset:
                 )
             )
 
-        return np.stack(imgs), np.array(targets)
+        return np.stack(imgs), np.array(targets).reshape((-1, 1))
 
     def save_converted(self, X: npt.ArrayLike, y: npt.ArrayLike) -> None:
         def dividir_array(X: npt.NDArray, max_size_mb=24):
@@ -148,7 +136,7 @@ class Dataset:
             y.append(np.load(str(file)))
         y = np.vstack(y)
 
-        return X, y
+        return X, y.reshape((-1, 1))
 
     @staticmethod
     def download_from_remote(
@@ -157,18 +145,38 @@ class Dataset:
         folder: str,
         destination: Path = Path("."),
     ):
+        """
+        Baixa pasta de repositório remoto do github de forma
+        recursiva.
+        """
         fs = fsspec.filesystem(protocol="github", org=owner, repo=repo)
         local_dir = destination / folder
         local_dir.mkdir(exist_ok=True, parents=True)
-        fs.get(folder, destination.as_posix(), recursive=True)
+        fs.get(folder, local_dir.as_posix(), recursive=True)
 
+
+# %% [markdown]
+# Inicialmente foi usado o código abaixo para baixar o dataset de imagens do repositório do Kaggle
+
+# %%
+""" 
+path = kagglehub.dataset_download("paultimothymooney/chest-xray-pneumonia")
+path_chest = Path(path) / "chest_xray" / "chest_xray"
+chest_data = Dataset("chest",path_chest,resolution=(128,128))
+chest_data.load_dataset()
+X_chest,y_chest = chest_data.convert_toarray(["bacteria","virus"],"normal")
+chest_data.save_converted(X_chest,y_chest) 
+"""
+
+# %% [markdown]
+# Nos usos subsequentes usou-se o dataset já armazenado no repositório remoto
 
 # %%
 Dataset.download_from_remote("vinicius-souza-lima", "mvp_ml", "datasets")
+X_chest, y_chest = Dataset.load_converted("datasets/chest")
 
 # %%
 resolution = (128, 128)
-# X_chest,y_chest = convert_toarray("./datasets/chest_xray/imgs",["virus","bacteria"],"normal",resolution)
 
 # %% [markdown]
 # ### Definição do Problema
