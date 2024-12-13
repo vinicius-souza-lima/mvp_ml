@@ -17,34 +17,39 @@
 
 # %%
 from pathlib import Path
-import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
+from typing import Literal
 from PIL import Image
-from sklearn.model_selection import train_test_split, cross_val_predict, cross_val_score
+from sklearn.model_selection import (
+    train_test_split,
+    cross_val_predict,
+    cross_val_score,
+    KFold,
+)
 from sklearn.metrics import (
-    confusion_matrix,
     ConfusionMatrixDisplay,
+    accuracy_score,
     precision_score,
     recall_score,
     f1_score,
+    roc_auc_score,
+    roc_curve,
 )
 from sklearn.base import BaseEstimator, TransformerMixin
 import joblib
-import kagglehub
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 import seaborn as sns
-import kagglehub
 import math
 import fsspec
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.calibration import label_binarize
+import kagglehub
 
-
-# %% [markdown]
-# ## Problema de Regressão
 
 # %% [markdown]
 # ## Problema de Classificação (Algoritmos Clássicos)
@@ -55,15 +60,11 @@ class Dataset:
         self,
         name: str,
         path_dir: str,
-        resolution: tuple[int, int] = (128, 128),
     ):
         self.name = name
         self.data = None
         self.path_dir = path_dir
-        self.resolution = resolution
         self.files = None
-        self.X = None
-        self.y = None
 
     def load_dataset(self):
         dir = Path(self.path_dir)
@@ -74,6 +75,7 @@ class Dataset:
         self,
         target_values: list[str],
         fallback: str | None = None,
+        resolution: tuple[int, int] = (128, 128),
     ):
         imgs = []
         targets = []
@@ -87,18 +89,18 @@ class Dataset:
                     Image.open(str(f))  # Lê a imagem
                     .convert("L")  # Converte para escala de cinza
                     .resize(
-                        self.resolution, Image.Resampling.LANCZOS
+                        resolution, Image.Resampling.LANCZOS
                     )  # Redimensiona a imagem
                 ).flatten()  # Formata a matriz como array
             )
             targets.append(
                 next(
-                    (cat for cat in f.name.split("_") if cat in target_values),
+                    (1 for cat in f.name.split("_") if cat in target_values),
                     fallback,  # procura categoria no nome do arquivo
                 )
             )
 
-        return np.stack(imgs), np.array(targets).reshape((-1, 1))
+        return np.stack(imgs), np.array(targets).astype(np.bool)
 
     def save_converted(self, X: npt.ArrayLike, y: npt.ArrayLike) -> None:
         def dividir_array(X: npt.NDArray, max_size_mb=24):
@@ -159,20 +161,18 @@ class Dataset:
 # Inicialmente foi usado o código abaixo para baixar o dataset de imagens do repositório do Kaggle
 
 # %%
-""" 
-path = kagglehub.dataset_download("paultimothymooney/chest-xray-pneumonia")
-path_chest = Path(path) / "chest_xray" / "chest_xray"
-chest_data = Dataset("chest",path_chest,resolution=(128,128))
+#path = kagglehub.dataset_download("paultimothymooney/chest-xray-pneumonia")
+path_chest = Path("/home/vinicius/.cache/kagglehub/datasets/paultimothymooney/chest-xray-pneumonia/versions/2/") / "chest_xray" / "chest_xray"
+chest_data = Dataset("chest",path_chest)
 chest_data.load_dataset()
-X_chest,y_chest = chest_data.convert_toarray(["bacteria","virus"],"normal")
-chest_data.save_converted(X_chest,y_chest) 
-"""
+X_chest,y_chest = chest_data.convert_toarray(["bacteria","virus"],0,(128,128))
+chest_data.save_converted(X_chest,y_chest)
 
 # %% [markdown]
 # Nos usos subsequentes usou-se o dataset já armazenado no repositório remoto
 
 # %%
-Dataset.download_from_remote("vinicius-souza-lima", "mvp_ml", "datasets")
+#Dataset.download_from_remote("vinicius-souza-lima", "mvp_ml", "datasets")
 X_chest, y_chest = Dataset.load_converted("datasets/chest")
 
 # %%
@@ -182,22 +182,38 @@ resolution = (128, 128)
 # ### Definição do Problema
 
 # %% [markdown]
-# Descrição do problema: Classificar imagem de raio x de paciente em saudável, pneumonia bacteriana ou pneumonia virótica
+# #### Descrição do problema
 
 # %% [markdown]
-# Premissas ou hipóteses sobre o problema
+#  Classificar imagem de raio x de paciente em saudável, pneumonia bacteriana ou pneumonia virótica
 
 # %% [markdown]
-# Restrições para selecionar os dados
+# #### Premissas ou hipóteses sobre o problema
 
 # %% [markdown]
-# Descrição do Dataset
+# É assumido que para dada imagem, existem apenas três possibilidades para classificação em relação a pneumonia:
+#
+# - `Normal`: Significa que o paciente não possui pneumonia.
+# - `Bactéria`: Signica que o paciente possui pneumonia causada por bactéria.
+# - `Virus`: Significa que o paciente possui pneumonia virótica. 
+
+# %% [markdown]
+# #### Restrições para selecionar os dados
+
+# %% [markdown]
+# Os dados selecionados foram provenientes de um dataset já existente hospedado no Kaggle.
+
+# %% [markdown]
+# #### Descrição do Dataset
+
+# %% [markdown]
+# O dataset consiste de 5856 imagens de raio-x de alta resolução da região toráxica que foram redimensionadas para a resolução de 128x128 para facilitar o processamento de imagens 
 
 # %%
 X_chest.shape
 
 # %%
-plt.imshow(X_chest[4000].reshape(resolution))
+plt.imshow(X_chest[4000].reshape((128,128)))
 plt.axis("off")
 plt.show()
 
@@ -208,9 +224,6 @@ plt.show()
 # #### Separação do Dataset em treino e teste
 
 # %%
-from sklearn.model_selection import KFold
-
-
 X_chest_train, X_chest_test, y_chest_train, y_chest_test = train_test_split(
     X_chest, y_chest, test_size=0.2, random_state=42, stratify=y_chest
 )
@@ -218,9 +231,24 @@ X_chest_train, X_chest_test, y_chest_train, y_chest_test = train_test_split(
 num_particoes = 5
 kfold = KFold(n_splits=num_particoes, shuffle=True, random_state=42)
 
-
 # %% [markdown]
 # #### Data Augmentation
+
+# %%
+from sklearn.discriminant_analysis import StandardScaler
+from sklearn.pipeline import FunctionTransformer, Pipeline
+
+
+pre = Pipeline(
+    [
+        ("converte_float", FunctionTransformer(lambda X: X.astype("float64"))),
+        ("normalizacao", StandardScaler()),
+    ]
+)
+
+# %%
+X_chest_train_pre = pre.fit_transform(X_chest_train)
+
 
 # %%
 class Augmenter(BaseEstimator, TransformerMixin):
@@ -241,34 +269,52 @@ class Augmenter(BaseEstimator, TransformerMixin):
 # %% [markdown]
 # ### Modelagem e treinamento
 
-# %%
-np.random.seed(42)
-results = []
-
-
-models = {
-    "NB": GaussianNB(),  # 5 sec
-    "KNN": KNeighborsClassifier(),  # 12 sec
-    "RF": RandomForestClassifier(),  # +- 3 min
-    "CART": DecisionTreeClassifier(),  # +- 7 min
-}
-
-for name, model in models.items():
-    cv_results = cross_val_score(
-        model, X_chest_train, y_chest_train, cv=kfold, scoring="accuracy"
-    )
-    results.append(cv_results)
-    np.save("results.npy", results)
-
-    print(f"{name}: Média: {cv_results.mean():.2f}, std:{cv_results.std():.3f}")
+# %% [markdown]
+# Como o a classe `bacteria` é bem mais comum que as demais, foi considerada a métrica de `balanced_accuracy` para levar em conta o desbalanceamento das classes na escolha dos modelos.
 
 # %%
+def choose_model(
+    scoring: Literal["accuracy", "balanced_accuracy", "f1_macro"] = "accuracy",
+    seed: int = 42,
+    n_jobs = 3
+):
+    np.random.seed(seed)
+    results = []
+
+    models = {
+        "NB": GaussianNB(),  # 5 sec
+        "KNN": KNeighborsClassifier(),  # 12 sec
+        "RF": RandomForestClassifier(),  # +- 3 min
+        "CART": DecisionTreeClassifier(),  # +- 7 min
+    }
+
+    for name, model in models.items():
+        cv_results = cross_val_score(
+            model,
+            X_chest_train_pre,
+            y_chest_train.ravel(),
+            cv=kfold,
+            scoring=scoring,
+            n_jobs=n_jobs,
+        )
+        results.append(cv_results)
+        print(f"{name}: Média: {cv_results.mean():.3f}, std:{cv_results.std():.3f}")
+
+    return results
+
+
+# %%
+scoring = "precision"
+results = choose_model(scoring=scoring, seed=42,n_jobs=1)
+
+# %% vscode={"languageId": "javascript"}
 sns.set_theme()
 names = ["NB", "KNN", "RF", "CART"]
 fig, ax = plt.subplots(figsize=(12, 8))
 fig.suptitle("Comparação da acurácia dos modelos")
 ax.set_xticklabels(names)
 sns.boxplot(results);
+
 
 # %% [markdown]
 # Assim foi escolhido Random Forest para prosseguir na otimização de hiperparâmetros
@@ -277,67 +323,167 @@ sns.boxplot(results);
 # #### Otimização de Hiperparâmetros
 
 # %%
-model = RandomForestClassifier()
+def otimize_hyper(
+    scoring: Literal["accuracy", "balanced_accuracy", "f1_macro"] = "accuracy",
+    seed: int = 42,
+    n_iter=20,
+    n_jobs=3,
+    cv=kfold,
+    class_weight="balanced",
+):
+    model = RandomForestClassifier(random_state=seed, class_weight=class_weight)
+    param_grid = {
+        "n_estimators": [50, 100, 300],
+        "max_depth": [None, 2, 5, 10],
+        "min_samples_split": [2, 4, 5],
+        "min_samples_leaf": [2, 4, 5],
+    }
+
+    random_search = RandomizedSearchCV(
+        model,
+        param_grid,
+        cv=cv,
+        scoring=scoring,
+        n_iter=n_iter,
+        n_jobs=n_jobs,
+        random_state=seed,
+    )
+    random_search.fit(X_chest_train_pre, y_chest_train.ravel())
+    print(f"O melhor modelo teve parâmetros:{random_search.best_params_}")
+    print(f"O melhor score foi:{random_search.best_score_:.2f}")
+    return random_search.best_estimator_
+
 
 # %%
-from sklearn.model_selection import RandomizedSearchCV
+final_clf = otimize_hyper(scoring="precision",class_weight="balanced",n_jobs=2,n_iter=5)
 
-param_grid = {
-    "n_estimators": [50, 100, 200],
-    "max_depth": [None, 2, 5, 10],
-    "min_samples_split": [2, 4, 5],
-    "min_samples_leaf": [2, 4, 5],
-}
+# %%
+final_model = Pipeline([("Preprocessamento", pre), ("Classificador", final_clf)])
 
-random_search = RandomizedSearchCV(
-    model, param_grid, cv=3, scoring="accuracy", n_iter=5, n_jobs=2, random_state=42
+# %%
+cv = 3
+#y_chest_predict_val = cross_val_predict(final_model,X_chest_train,y_chest_train.ravel(),cv=cv)
+#y_chest_score_val = cross_val_score(final_model,X_chest_train,y_chest_train.ravel(),cv=cv)
+predict_proba=final_model.predict_proba(X_chest_train)
+
+
+# %%
+ConfusionMatrixDisplay.from_predictions(
+    y_chest_train, y_chest_predict_val, normalize="true", values_format="0.0%"
 )
+plt.grid(False)
 
 # %%
-random_search.fit(X_chest_train, y_chest_train)
+from sklearn.metrics import precision_recall_curve
+precisions,recalls,thresholds = precision_recall_curve(y_chest_train,predict_proba[:,0],pos_label="normal")
 
 # %%
-random_search.best_score_
+sns.set_theme()
+fig,ax = plt.subplots(figsize=(10,6))
+ax.plot(thresholds, precisions[:-1], "b--", label="Precision", linewidth=2)
+ax.plot(thresholds, recalls[:-1], "g-", label="Recall", linewidth=2)
+ax.legend()
+ax.vlines(0.5, 0, 1.0, "k", "dotted", label="threshold")
+plt.show()
 
 # %%
-final_model = random_search.best_estimator_
-
-# %%
-joblib.dump(final_model, "final_model.joblib")
+plt.plot(recalls, precisions, linewidth=2, label="Precision/Recall curve")
+plt.show()
 
 # %% [markdown]
-# # Avaliação de Resultados
-
-# %%
-final_model = joblib.load("final_model.joblib")
+# ### Avaliação de Resultados
 
 # %%
 final_model.fit(X_chest_train, y_chest_train)
 
-# %%
-joblib.dump(final_model, "final_model.joblib")
-
 # %% [markdown]
-# ### Métricas de Avaliação
-
-# %% [markdown]
-# #### Matriz de confusão
+# #### Métricas de Avaliação
 
 # %%
-y_chest_predict = cross_val_predict(final_model, X_chest_train, y_chest_train)
+y_chest_predict = final_model.predict(X_chest_test)
+
+# %% [markdown]
+# ##### Acurácia
 
 # %%
-cm = confusion_matrix()
+accuracy_score(y_chest_test, y_chest_predict)
 
 # %% [markdown]
-# #### Precisão e Recall
+# ##### Matriz de confusão
 
 # %% [markdown]
-# #### Curva ROC
+# A matriz de confusão abaixo nos permite analisar como se distribuem
+# as previsões de cada classe a aprtir da comparação com as classes
+# verdadeiras.
+
+# %%
+ConfusionMatrixDisplay.from_predictions(
+    y_chest_test, y_chest_predict, normalize="true", values_format="0.0%"
+)
+plt.grid(False)
 
 # %% [markdown]
-# ## Problema de Visão Computacional (Deep Learning)
+# Percebe-se que as classes `bacteria` e `normal` tiveram bom desempenho nessa métrica,
+# uma vez que ambos mais de 85% das previsões são corretas, ou seja, o modelo consegue identificar corretamente a maior parte dos casos em que o paciente tem pneumonia causada por bacteria ou em que o paciente é saudável. 
 #
-# Objetivo: Treinar rede neural que classifique os tipos de tumores e segmente na imagem o local em que ele aparece
-#
-# ## Problema de Processamento de Linguagem Natural
+# Entretanto, o modelo não tem bom desempenho ao tentar classificar a pneumonia virótica, visto que a maioria das previsões foram incorretas. Nesse caso a maior dificuldade foi em diferenciar a pneumonia virótica da pneumonia bacteriana.
+
+# %% [markdown]
+# A partir da matriz de confusão acima, que leva em conta a distibuição dos erros e predição, percebe-se a dificuldade do modelo de diferenciar entre pneumonia causada por bactéria e por vírus. Além disso o modelo distribui igualmente o erro de classificação no caso de paciente saudável para as classes `bacteria` e `normal`, demonstrando mais uma vez a dificuldade de diferenciação entre as duas classes.
+
+# %% [markdown]
+# ##### Precisão
+
+# %%
+print(
+    "Precisão de cada classe:",
+    precision_score(y_chest_test, y_chest_predict)
+)
+
+# %% [markdown]
+# Como existe desbalanceamento das classes (bacteria é bem mais comum) será utilizada a
+# métrica de precisão ponderada.
+
+# %% [markdown]
+# ##### Recall
+
+# %%
+print(
+    "Recall de cada classe:", recall_score(y_chest_test, y_chest_predict)
+)
+
+# %% [markdown]
+# Como existe desbalanceamento das classes (bacteria é bem mais comum) será utilizada a
+# métrica de recall ponderada.
+
+# %% [markdown]
+# ##### Curva ROC
+
+# %%
+y_chest_pproba = final_model.predict_proba(X_chest_test)
+
+
+# %%
+def plot_roc(y_true: npt.ArrayLike, y_score: npt.ArrayLike):
+
+    sns.set_theme()
+    _, ax = plt.subplots(figsize=(10, 10))
+
+    fpr, tpr, _ = roc_curve(y_true, y_score[:, 1])
+    auc = roc_auc_score(y_true, y_score[:, 1])
+    ax.plot(fpr, tpr, lw=2,c="red", label=f"(AUC = {auc:.2f})")
+
+    ax.plot(
+        [0, 1], [0, 1], label="Classificador Aleatório (AUC = 0.5)"
+    )  # Plota classificador aleatório
+    ax.plot(
+        [0, 0, 1], [0, 1, 1], label="Classificador Perfeito (AUC = 1.0)"
+    )  # Plota classificador perfeito
+
+    ax.grid(True)
+    ax.legend()
+    plt.show()
+
+
+# %%
+plot_roc(y_chest_test, y_chest_pproba)
