@@ -15,6 +15,15 @@
 # %% [markdown]
 # <a target="_blank" href="https://colab.research.google.com/github/vinicius-souza-lima/mvp_ml/blob/main/mvp_ml.ipynb"> <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/> </a>
 
+# %% [markdown]
+# # MVP Machine Learning: Classificação de imagens de Raio-X
+
+# %% [markdown]
+# ![image.png](attachment:image.png)
+
+# %% [markdown]
+# Aluno: Vinícius de Souza Lima
+
 # %%
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -24,7 +33,6 @@ from typing import Literal
 from PIL import Image
 from sklearn.model_selection import (
     train_test_split,
-    cross_val_predict,
     cross_val_score,
     KFold,
 )
@@ -33,11 +41,9 @@ from sklearn.metrics import (
     accuracy_score,
     precision_score,
     recall_score,
-    f1_score,
     roc_auc_score,
     roc_curve,
 )
-from sklearn.base import BaseEstimator, TransformerMixin
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import GaussianNB
@@ -47,8 +53,6 @@ import seaborn as sns
 import math
 import fsspec
 from sklearn.model_selection import RandomizedSearchCV
-from sklearn.calibration import label_binarize
-import kagglehub
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import FunctionTransformer, Pipeline
@@ -65,7 +69,6 @@ class Dataset:
         path_dir: str,
     ):
         self.name = name
-        self.data = None
         self.path_dir = path_dir
         self.files = None
 
@@ -103,7 +106,7 @@ class Dataset:
                 )
             )
 
-        return np.stack(imgs), np.array(targets).astype(np.bool)
+        return np.stack(imgs), np.array(targets).astype("bool")
 
     def save_converted(self, X: npt.ArrayLike, y: npt.ArrayLike) -> None:
         def dividir_array(X: npt.NDArray, max_size_mb=24):
@@ -141,7 +144,7 @@ class Dataset:
             y.append(np.load(str(file)))
         y = np.vstack(y)
 
-        return X, y.astype(np.bool)
+        return X, y.astype("bool")
 
     @staticmethod
     def download_from_remote(
@@ -164,28 +167,25 @@ class Dataset:
 # Inicialmente foi usado o código abaixo para baixar o dataset de imagens do repositório do Kaggle
 
 # %%
-# path = kagglehub.dataset_download("paultimothymooney/chest-xray-pneumonia")
-path_chest = (
-    Path(
-        "/home/vinicius/.cache/kagglehub/datasets/paultimothymooney/chest-xray-pneumonia/versions/2/"
-    )
-    / "chest_xray"
-    / "chest_xray"
-)
-chest_data = Dataset("chest", path_chest)
-chest_data.load_dataset()
-X_chest, y_chest = chest_data.convert_toarray(["bacteria", "virus"], 0, (128, 128))
-chest_data.save_converted(X_chest, y_chest)
+#path = kagglehub.dataset_download("paultimothymooney/chest-xray-pneumonia")
+#path_chest = (
+    #Path(
+        #"/home/vinicius/.cache/kagglehub/datasets/paultimothymooney/chest-xray-pneumonia/versions/2/"
+    #)
+    #/ "chest_xray"
+   # / "chest_xray"
+#)
+#chest_data = Dataset("chest", path_chest)
+#chest_data.load_dataset()
+#X_chest, y_chest = chest_data.convert_toarray(["bacteria", "virus"], 0, (128, 128))
+#chest_data.save_converted(X_chest, y_chest)
 
 # %% [markdown]
 # Nos usos subsequentes usou-se o dataset já armazenado no repositório remoto
 
 # %%
-# Dataset.download_from_remote("vinicius-souza-lima", "mvp_ml", "datasets")
+Dataset.download_from_remote("vinicius-souza-lima", "mvp_ml", "datasets")
 X_chest, y_chest = Dataset.load_converted("datasets/chest")
-
-# %%
-resolution = (128, 128)
 
 # %% [markdown]
 # ### Definição do Problema
@@ -194,7 +194,7 @@ resolution = (128, 128)
 # #### Descrição do problema
 
 # %% [markdown]
-#  Classificar imagem de raio x de paciente em saudável, ou com pneumonia.
+#  Classificar imagem de raio x de paciente em saudável ou com pneumonia utilizando algoritmos de machine learning clássicos. 
 
 # %% [markdown]
 # #### Premissas ou hipóteses sobre o problema
@@ -223,7 +223,9 @@ resolution = (128, 128)
 X_chest.shape
 
 # %%
-print(f" O dataset consiste de {y_chest.sum()/y_chest.shape[1]*100.0:.2f}% de imagens de pacientes doentes.")
+print(
+    f" O dataset consiste de {y_chest.sum()/y_chest.shape[1]*100.0:.2f}% de imagens de pacientes doentes."
+)
 
 # %% [markdown]
 # Abaixo um exemplo de imagem de de raio X.
@@ -307,12 +309,12 @@ def choose_model(
 
 
 # %%
-#scoring = "precision"
-#results = choose_model(scoring=scoring, seed=42, n_jobs=1)
+# scoring = "precision"
+# results = choose_model(scoring=scoring, seed=42, n_jobs=1)
 
 # %%
-#joblib.dump(results,"models/results.npy")
-Dataset.download_from_remote("vinicius-souza-lima","mvp_ml","models")
+# joblib.dump(results,"models/results.npy")
+Dataset.download_from_remote("vinicius-souza-lima", "mvp_ml", "models")
 results = joblib.load("models/results.npy")
 
 # %% vscode={"languageId": "javascript"}
@@ -363,10 +365,10 @@ def otimize_hyper(
 
 
 # %%
-#final_clf = otimize_hyper(scoring="precision", class_weight="balanced", n_jobs=2, n_iter=5)
+# final_clf = otimize_hyper(scoring="precision", class_weight="balanced", n_jobs=2, n_iter=5)
 
 # %%
-#joblib.dump(final_clf,"models/final_clf.joblib")
+# joblib.dump(final_clf,"models/final_clf.joblib")
 final_clf = joblib.load("models/final_clf.joblib")
 
 # %%
