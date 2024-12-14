@@ -10,10 +10,4 @@ Primeiro clone o repositório na sua máquina
 git clone github.com/vinicius-souza-lima/mvp_ml.git
 ```
 
-Use o `poetry` para instalar as dependências presentes no arquivo `pyproject.toml`
-```bash
-poetry install
-```
-
-
-Para reproduzir o ambi
+Use o `uv` para instalar as dependências presentes no arquivo `pyproject.toml` ou instale com pip pelo arquivo `requirements.txt`.
